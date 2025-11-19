@@ -130,21 +130,53 @@
     .invoice-area [data-col="actions"] { width: 8%; max-width: 80px; }
 
     /* inputs */
-    .qty-input{
-        width:70px;
-        padding:6px;
-        border-radius:6px;
-        border:1px solid #d1d5db;
-        text-align:center;
-        box-sizing: border-box; 
-    }
+   /* إخفاء الحدود بشكل افتراضي وجعل الخلفية شفافة */
     .price-input {
         width: 90px; 
         padding: 6px;
         border-radius: 6px;
-        border: 1px solid #d1d5db;
+        /* التعديل الأساسي: إخفاء الحد */
+        border: 1px solid transparent; 
+        background: transparent; /* إزالة خلفية بيضاء قد تظهر */
         text-align: center;
         box-sizing: border-box;
+        transition: all 0.15s ease-in-out; /* إضافة انتقال سلس */
+    }
+
+    /* إظهار الحدود والتأثير عند الضغط أو التركيز على مربع الإدخال */
+    .price-input:focus,
+    .price-input:hover {
+        border: 1px solid #d1d5db; /* إظهار الحد عند التركيز */
+        background: #fff; /* إعادة الخلفية البيضاء */
+    }
+
+    /* كرر نفس التعديل على مدخل الكمية لتوحيد المظهر */
+    .qty-input{
+        width:70px;
+        padding:6px;
+        border-radius:6px;
+        /* التعديل: إخفاء الحد */
+        border:1px solid transparent; 
+        background: transparent;
+        text-align:center;
+        box-sizing: border-box; 
+        transition: all 0.15s ease-in-out;
+    }
+    
+    .qty-input:focus,
+    .qty-input:hover {
+        border: 1px solid #d1d5db;
+        background: #fff;
+    }
+
+    /* ملاحظة هامة: يجب أن يتم تصفير الحدود الخاصة بالمدخل اليدوي في عمود الاسم (pname input) */
+    .invoice-area [data-col="name"] input {
+        border: 1px solid transparent !important; /* إخفاء الحد */
+        background: transparent !important;
+    }
+    .invoice-area [data-col="name"] input:focus {
+        border: 1px solid #d1d5db !important;
+        background: #fff !important;
     }
 
     .btn{
@@ -296,39 +328,40 @@
       </div>
     </div>
 
-    <div class="controls" aria-hidden="false">
-      <div class="suggestions">
-        <input id="searchInput" type="text" placeholder="اكتب اسم المنتج أو الكود..." autocomplete="off" />
-        <div id="suggestList" class="hidden"></div>
-      </div>
+<div class="controls" aria-hidden="false">
+  
+  <div style="display:flex;gap:8px;align-items:center; margin-top: 10px; flex-wrap: wrap;">
+    <select id="invoiceTypeSelect" class="btn ghost" style="min-width:150px;">
+        <option value="مبيعات" selected>فاتورة مبيعات</option>
+        <option value="مشتريات">فاتورة مشتريات</option>
+        <option value="عرض سعر">عرض سعر</option>
+    </select>
 
-      <div style="display:flex;gap:8px;align-items:center; margin-top: 10px; flex-wrap: wrap;">
-        <select id="invoiceTypeSelect" class="btn ghost" style="min-width:150px;">
-            <option value="مبيعات" selected>فاتورة مبيعات</option>
-            <option value="مشتريات">فاتورة مشتريات</option>
-            <option value="عرض سعر">عرض سعر</option>
-        </select>
+    <select id="excelSource" class="btn ghost" title="اختر ملف الإكسيل" style="min-width:150px;">
+        <option value="products.Xls" selected>المحل (products.Xls)</option>
+        <option value="stook.Xls">المخزن (stook.Xls)</option>
+    </select>
 
-        <!-- Excel source selector (المحل افتراضي) -->
-        <select id="excelSource" class="btn ghost" title="اختر ملف الإكسيل" style="min-width:150px;">
-            <option value="products.Xls" selected>المحل (products.Xls)</option>
-            <option value="stook.Xls">المخزن (stook.Xls)</option>
-        </select>
+    <button id="addManual" class="btn ghost">إضافة يدوي</button>
+    <button id="clearInvoice" class="btn ghost">مسح الفاتورة</button>
+    <button id="toggleBuyColumnsBtn" class="btn ghost">إخفاء/إظهار سعر الشراء</button>
+    <button id="toggleStampBtn" class="btn ghost">ختم الفاتورة</button>
 
-        <button id="addManual" class="btn ghost">إضافة يدوي</button>
-        <button id="clearInvoice" class="btn ghost">مسح الفاتورة</button>
-        <button id="toggleBuyColumnsBtn" class="btn ghost">إخفاء/إظهار سعر الشراء</button>
-        <button id="toggleStampBtn" class="btn ghost">ختم الفاتورة</button>
-
-        <div class="column-toggle">
-            <select id="columnSelect" class="small" title="اختر عمودًا للإخفاء/الإظهار"></select>
-            <button id="toggleColumnBtn" class="btn ghost">إخفاء/إظهار</button>
-        </div>
-
-        <button id="downloadImg" class="btn">تحميل صورة</button>
-        <button id="downloadPdf" class="btn">تحميل PDF</button>
-      </div>
+    <div class="column-toggle">
+        <select id="columnSelect" class="small" title="اختر عمودًا للإخفاء/الإظهار"></select>
+        <button id="toggleColumnBtn" class="btn ghost">إخفاء/إظهار</button>
     </div>
+
+    <button id="downloadImg" class="btn">تحميل صورة</button>
+    <button id="downloadPdf" class="btn">تحميل PDF</button>
+  </div>
+  
+  <div class="suggestions" style="margin-top: 10px;">
+    <input id="searchInput" type="text" placeholder="اكتب اسم المنتج أو الكود..." autocomplete="off" />
+    <div id="suggestList" class="hidden"></div>
+  </div>
+  
+</div>
 
     <div class="invoice-area">
       <table id="invoiceTable" aria-label="invoice">
@@ -340,8 +373,8 @@
             <th data-col="qty">الكمية</th>
             <th data-col="buy">سعر الشراء</th>
             <th data-col="sell">سعر البيع</th>
-            <th data-col="sumBuy">مجموع الشراء</th>
-            <th data-col="sumSell">مجموع البيع</th>
+            <th data-col="sumBuy">اجمالي الشراء</th>
+            <th data-col="sumSell">اجمالي </th>
             <th data-col="actions">إجراءات</th>
           </tr>
         </thead>
