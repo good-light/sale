@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>فاتورة مبيعات</title>
+
+  <!-- Libraries -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    :root{
+      --primary:#0b78b7;
+      --accent:#023e8a;
+      --muted:#6b7280;
+      --card-bg:#fff;
+      --bg:#f3f6fb;
+      --success:#2dce89;
+    }
+    html,body{height:100%;margin:0;font-family:Tahoma,Arial,sans-serif;background:var(--bg);color:#222}
+    .wrap{
+        max-width:1100px;
+        margin:28px auto; 
+        padding:22px;
+        border-radius:12px;
+        background:linear-gradient(180deg,#ffffff 0%, #fbfdff 100%);
+        box-shadow:0 10px 35px rgba(9, 30, 66, 0.09); 
+        transition: box-shadow 0.3s ease; 
+        position: relative; 
+        overflow: hidden; 
+    }
+    header{
+        display: block; 
+        text-align: center;
+        margin-bottom:20px;
+    }
+    header h1{
+        margin:0 auto; 
+        font-size:24px; 
+        color:var(--primary);
+        padding-bottom: 10px; 
+    }
+    .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .controls input[type="text"]{padding:10px 12px;border-radius:8px;border:2px solid #dbeafe;width:320px;font-size:15px;direction:ltr}
+    .controls .small{padding:8px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff}
+    /* suggestions */
+    .suggestions{position:relative;flex:1;min-width:220px}
+    #suggestList{position:absolute;right:0;left:0;top:44px;background:#fff;border-radius:8px;box-shadow:0 6px 20px rgba(16,24,40,0.08);z-index:1000;max-height:240px;overflow:auto;border:1px solid #e6eef8}
+    #suggestList div{padding:10px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9}
+    #suggestList div:hover{background:#e6f2ff}
+    /* invoice table */
+    .invoice-area{
+        margin-top:18px;
+        overflow:auto;
+    }
+    table{
+        width:100%;
+        border-collapse:collapse;
+        background:var(--card-bg);
+        border-radius:8px;
+        overflow:hidden; 
+    }
+    thead th{
+        background:var(--primary);
+        color:#fff;
+        padding:12px;
+        text-align:center;
+        font-weight:600;
+        border-bottom: 2px solid var(--accent); 
+    }
+    tbody td{
+        padding:10px;
+        text-align:center;
+        border-bottom:1px solid #f1f5f9;
+        white-space: nowrap; 
+    }
+    tbody tr:hover { 
+        background: #f7fcff; 
+        transition: background 0.2s;
+    }
+    tfoot td{
+        padding:12px;
+        text-align:center;
+        font-weight:700;
+        background:#f8fafc;
+        white-space: nowrap;
+    }
+    
+    /* column widths */
+    .invoice-area [data-col="name"] { width: 40%; max-width: 400px; text-align: right; }
+    .invoice-area [data-col="code"] { width: 10%; max-width: 100px; }
+    .invoice-area [data-col="qty"] { width: 8%; max-width: 60px; }
+    .invoice-area [data-col="sell"], .invoice-area [data-col="buy"] { width: 10%; max-width: 100px; font-size: 14px; } 
+    .invoice-area [data-col="sumSell"], .invoice-area [data-col="sumBuy"] { width: 10%; max-width: 100px; } 
+    .invoice-area [data-col="idx"] { width: 4%; max-width: 30px; }
+    .invoice-area [data-col="actions"] { width: 8%; max-width: 80px; }
+
+    /* inputs */
+    .qty-input{
+        width:70px;
+        padding:6px;
+        border-radius:6px;
+        border:1px solid #d1d5db;
+        text-align:center;
+        box-sizing: border-box; 
+    }
+    .price-input {
+        width: 90px; 
+        padding: 6px;
+        border-radius: 6px;
+        border: 1px solid #d1d5db;
+        text-align: center;
+        box-sizing: border-box;
+    }
+
+    .btn{
+        padding:10px 14px;
+        border-radius:8px;
+        border:0;
+        background:var(--primary);
+        color:#fff;
+        cursor:pointer;
+        font-weight:600;
+        transition: all 0.2s ease;
+    }
+    .btn:hover {
+        box-shadow: 0 4px 12px rgba(11, 120, 183, 0.4);
+        transform: translateY(-1px);
+    }
+    .btn.ghost{background:#fff;color:var(--primary);border:1px solid var(--primary)}
+    .btn.ghost:hover {
+        box-shadow: none; 
+        background: #f1f8ff; 
+        transform: none;
+    }
+    .right-actions{display:flex;gap:10px;align-items:center}
+    .totals-row{background:#e6f2ff}
+    .remove-btn{background:#ff6b6b;color:#fff;padding:6px 8px;border-radius:6px;border:0;cursor:pointer}
+    /* invoice header meta and info */
+    .invoice-header-meta {display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;gap:10px;}
+    .invoice-header-meta img {max-width: 150px; height: auto; margin-left: 20px; display: block;}
+    .invoice-info {display: flex; flex-direction: column; gap: 8px;}
+    .invoice-info div {
+        font-size: 14px; 
+        display: flex; 
+        align-items: center; 
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .invoice-info label {
+        flex-shrink: 0; 
+    }
+    .invoice-info input {
+        padding: 6px 10px; 
+        border-radius: 6px; 
+        border: 1px solid #cbd5e1; 
+        width: 100px; 
+        max-width: 150px; 
+        text-align: right;
+    } 
+    .column-toggle {display:flex;gap:10px;align-items:center;}
+    .hidden {display:none !important;}
+    .totals-bar {
+      margin-top: 12px;
+      display: flex;
+      justify-content: space-around;
+      gap: 12px;
+      align-items: center;
+      padding: 10px;
+      background: #f8fafc;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+      border: 1px solid #eef2ff;
+    }
+    .totals-bar .small-card {
+      background: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      min-width: 160px;
+      text-align: center;
+      border: 1px solid #eef2ff;
+      flex-grow: 1;
+    }
+    
+    .hide-on-capture {
+        display: none !important;
+    }
+    .totals-row .grand-total-label {
+        background: var(--primary); 
+        color: #fff; 
+        font-weight: 700;
+    }
+
+    /* company stamp */
+    #companyStamp {
+        position: absolute;
+        bottom: 160px;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: 180px; 
+        height: auto;
+        opacity: 0.55; 
+        z-index: 5;
+        pointer-events: none;
+    }
+
+    .closing-message {
+        text-align: center;
+        margin-top: 30px;
+        padding-top: 15px;
+        font-size: 14px;
+        color: var(--primary);
+        font-weight: 600;
+        border-top: 1px dashed #ddd; 
+    }
+
+    /* responsive */
+    @media (max-width:880px){
+      .controls{flex-direction:column;align-items:stretch}
+      .controls input[type="text"]{width:100%}
+      .invoice-header-meta {flex-direction: column; align-items: center; text-align: center;}
+      .invoice-header-meta img {margin-bottom: 15px; margin-left: 0;}
+      .totals-bar {flex-direction: column; gap: 8px;}
+      .totals-bar .small-card {min-width: 100%;}
+      .controls > div:last-child {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+
+    @media (max-width: 600px) {
+        .wrap { padding: 10px; margin: 10px auto; }
+        .invoice-info { max-width: 300px; width: 100%; margin: 0 auto; }
+        thead th, tbody td, tfoot td { padding: 4px; font-size: 11px; }
+        .qty-input { width: 30px; padding: 2px; font-size: 11px; }
+        .price-input { width: 50px; padding: 2px; font-size: 11px; }
+        .remove-btn { padding: 2px 4px; }
+        .invoice-area [data-col="code"] { width: 6%; }
+        .invoice-area [data-col="name"] { width: 35%; text-align: right; }
+        .invoice-area [data-col="qty"] { width: 4%; }
+        .invoice-area [data-col="buy"] { width: 7%; }
+        .invoice-area [data-col="sell"] { width: 7%; }
+        .invoice-area [data-col="sumBuy"] { width: 14%; }
+        .invoice-area [data-col="sumSell"] { width: 14%; }
+        .btn, .btn.ghost, .column-toggle select { padding: 6px 8px; font-size: 12px; min-width: 80px; flex-grow: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    
+    <header>
+      <h1 id="mainTitle">فاتورة مبيعات</h1>
+    </header>
+
+    <div class="invoice-header-meta">
+      <img src="logo.jpg" alt="شعار الشركة" id="companyLogo" />
+      <div class="invoice-info">
+        <div><label>اسم العميل:</label><input type="text" id="clientNameInput" placeholder="اكتب اسم العميل" /></div>
+        <div><label>رقم الفاتورة:</label><input type="text" id="invoiceNumberInput" placeholder="رقم الفاتورة" /></div>
+        <div><label>التاريخ:</label><input type="text" id="invoiceDateInput" placeholder="تاريخ الفاتورة" /></div>
+      </div>
+    </div>
+
+    <div class="controls" aria-hidden="false">
+      <div class="suggestions">
+        <input id="searchInput" type="text" placeholder="اكتب اسم المنتج أو الكود..." autocomplete="off" />
+        <div id="suggestList" style="display:none"></div>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center; margin-top: 10px; flex-wrap: wrap;">
+        <select id="invoiceTypeSelect" class="btn ghost" style="min-width:150px;">
+            <option value="مبيعات" selected>فاتورة مبيعات</option>
+            <option value="مشتريات">فاتورة مشتريات</option>
+            <option value="عرض سعر">عرض سعر</option>
+        </select>
+
+        <!-- Excel source selector (المحل افتراضي) -->
+        <select id="excelSource" class="btn ghost" title="اختر ملف الإكسيل" style="min-width:150px;">
+            <option value="products.Xls" selected>المحل (products.Xls)</option>
+            <option value="stook.Xls">المخزن (stook.Xls)</option>
+        </select>
+
+        <button id="addManual" class="btn ghost">إضافة يدوي</button>
+        <button id="clearInvoice" class="btn ghost">مسح الفاتورة</button>
+        <button id="toggleBuyColumnsBtn" class="btn ghost">إخفاء/إظهار سعر الشراء</button>
+        <button id="toggleStampBtn" class="btn ghost">ختم الفاتورة</button>
+
+        <div class="column-toggle">
+            <select id="columnSelect" class="small" title="اختر عمودًا للإخفاء/الإظهار"></select>
+            <button id="toggleColumnBtn" class="btn ghost">إخفاء/إظهار</button>
+        </div>
+
+        <button id="downloadImg" class="btn">تحميل صورة</button>
+        <button id="downloadPdf" class="btn">تحميل PDF</button>
+      </div>
+    </div>
+
+    <div class="invoice-area">
+      <table id="invoiceTable" aria-label="invoice">
+        <thead>
+          <tr id="tableHeaders">
+            <th data-col="idx">م</th>
+            <th data-col="code">الكود</th>
+            <th data-col="name">اسم الصنف</th>
+            <th data-col="qty">الكمية</th>
+            <th data-col="buy">سعر الشراء</th>
+            <th data-col="sell">سعر البيع</th>
+            <th data-col="sumBuy">مجموع الشراء</th>
+            <th data-col="sumSell">مجموع البيع</th>
+            <th data-col="actions">إجراءات</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot>
+          <tr class="totals-row">
+            <td colspan="3" class="grand-total-label">الإجمالي</td>
+            <td id="totalQty">0</td>
+            <td id="totalBuy">0</td>
+            <td id="totalSell">0</td>
+            <td id="grandBuy">0</td>
+            <td id="grandSell">0</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    
+    <div class="totals-bar">
+      <div class="small-card">عدد البنود: <span id="itemsCount">0</span></div>
+      <div class="small-card">إجمالي تكلفة الشراء : <strong id="displayGrandBuy">0</strong></div>
+      <div class="small-card">إجمالي سعر البيع : <strong id="displayGrandSell">0</strong></div>
+    </div>
+
+    <img id="companyStamp" src="stamp.png" alt="ختم الشركة" class="hidden" />
+
+    <div class="closing-message">
+        نشكركم على ثقتكم الغالية ونتطلع لخدمتكم مجدداً.
+    </div>
+
+  </div>
+
+<script>
+/* ====== Configuration ====== */
+let products = [];
+let invoiceCounter = 1;
+const DEFAULT_EXCEL = "products.Xls"; // ملف المحل الافتراضي
+let currentExcelFile = DEFAULT_EXCEL;
+
+/* Expected column header variants for mapping */
+const expectedKeys = {
+  name: ["الاسم","name","product","اسم المنتج"],
+  code: ["الكود","كود المنتج","code","barcode"],
+  qty: ["عدد القطع","quantity","qty","الكمية"],
+  buy: ["سعر الشراء","سعر_الشراء","purchase price","buy"],
+  sell: ["سعر البيع","سعر_البيع","sell price","sell"],
+  balance: ["الرصيد","رصيد","balance"]
+};
+
+const columnHeaders = [
+  { key: "idx", text: "م" },
+  { key: "code", text: "كود الصنف" },
+  { key: "name", text: "اسم الصنف" },
+  { key: "qty", text: "الكمية" },
+  { key: "buy", text: "سعر الشراء" },
+  { key: "sell", text: "سعر البيع" },
+  { key: "sumBuy", text: "المجموع شراء" },
+  { key: "sumSell", text: "المجموع بيع" },
+  { key: "actions", text: "إجراءات" }
+];
+
+/* Utility functions */
+function normKey(s){
+  if(!s && s!==0) return "";
+  return String(s).toLowerCase().replace(/\s+/g,'').replace(/أ|إ|آ/g,'ا').replace(/[^ا-ي0-9a-z]/g,'');
+}
+function escapeHtml(s){
+  if(s===null||s===undefined) return '';
+  return String(s).replace(/[&<>"']/g, (m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]);
+}
+function formatNumber(n){
+  return Number(n || 0).toLocaleString('en-US', {maximumFractionDigits:2});
+}
+
+/* Map headers to expected keys */
+function mapHeaders(headers){
+  const map = {};
+  headers.forEach((h,i)=>{
+    const n = normKey(h);
+    for(const [k,variants] of Object.entries(expectedKeys)){
+      for(const v of variants){
+        if(n === normKey(v)){
+          map[k] = { index: i, raw: h };
+        }
+      }
+    }
+  });
+  return map;
+}
+
+/* Load Excel (fetch) and parse */
+async function loadExcel(filename){
+  currentExcelFile = filename || DEFAULT_EXCEL;
+  try{
+    console.log("تحميل الملف:", currentExcelFile);
+    const res = await fetch(currentExcelFile);
+    if(!res.ok) throw new Error('fetch failed '+res.status);
+    const arr = await res.arrayBuffer();
+    const workbook = XLSX.read(new Uint8Array(arr), {type:'array'});
+    const ws = workbook.Sheets[workbook.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(ws, {header:1});
+    if(!raw || raw.length === 0){ alert('الملف فارغ أو غير قابل للقراءة'); products = []; return; }
+
+    const headers = raw[0].map(h => h === undefined || h === null ? '' : String(h));
+    const headerMap = mapHeaders(headers);
+
+    products = [];
+    for(let r=1;r<raw.length;r++){
+      const row = raw[r];
+      if(!row || row.every(c => c===undefined || c===null || String(c).trim()==="")) continue;
+      const p = {};
+      if(headerMap.name) p.name = row[headerMap.name.index];
+      if(headerMap.code) p.code = row[headerMap.code.index];
+      if(headerMap.qty) p.qty = row[headerMap.qty.index];
+      if(headerMap.buy) p.buy = row[headerMap.buy.index];
+      if(headerMap.sell) p.sell = row[headerMap.sell.index];
+      if(headerMap.balance) p.balance = row[headerMap.balance.index];
+
+      // fallback heuristics
+      if(!p.name && row[0] !== undefined) p.name = row[0];
+      if(!p.code && row[1] !== undefined) p.code = row[1];
+
+      p.buy = Number(p.buy || 0);
+      p.sell = Number(p.sell || 0);
+      p.qty = Number(p.qty || 0);
+
+      if((p.name && String(p.name).trim()!=="") || (p.code && String(p.code).trim()!=="")){
+        products.push(p);
+      }
+    }
+
+    buildSuggestionsIndex();
+    alert('✅ تم تحميل ملف الإكسيل بنجاح ('+currentExcelFile+')\nعدد المنتجات: '+products.length);
+  } catch(err){
+    console.error(err);
+    products = [];
+    alert('خطأ في تحميل الملف. تأكد من اسم الملف ومساره داخل مجلد المشروع.\n' + err.message);
+  }
+}
+
+/* Suggestions UI */
+const searchInput = document.getElementById('searchInput');
+const suggestList = document.getElementById('suggestList');
+let debounceTimer = null;
+
+searchInput.addEventListener('input', (e)=>{
+  const q = e.target.value.trim();
+  if(debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(()=>showSuggestions(q), 160);
+});
+
+function buildSuggestionsIndex(){
+  // no-op for now (products array is the index)
+}
+
+function showSuggestions(q){
+  suggestList.innerHTML = '';
+  if(!q){ suggestList.style.display='none'; return; }
+  const qn = String(q).toLowerCase();
+  const matches = products.filter(p=>{
+    const name = String(p.name||'').toLowerCase();
+    const code = String(p.code||'').toLowerCase();
+    return (name.includes(qn) || code.includes(qn));
+  }).slice(0,18);
+
+  if(matches.length === 0){ suggestList.style.display='none'; return; }
+  matches.forEach(m=>{
+    const div = document.createElement('div');
+    div.textContent = `${m.name||''} — ${m.code||''} | رصيد:${m.balance||0}`;
+    div.onclick = ()=>{ addProductToInvoice(m); suggestList.style.display='none'; searchInput.value=''; };
+    suggestList.appendChild(div);
+  });
+  suggestList.style.display = 'block';
+}
+
+/* Invoice operations */
+const tbody = document.querySelector('#invoiceTable tbody');
+
+function addProductToInvoice(prod){
+  const tr = document.createElement('tr');
+
+  const qty = prod.qty && prod.qty>0 ? prod.qty : 1;
+  const buy = Number(prod.buy || 0);
+  const sell = Number(prod.sell || 0);
+
+  tr.innerHTML = `
+    <td class="idx" data-col="idx">${invoiceCounter}</td>
+    <td class="code" data-col="code">${escapeHtml(prod.code||'')}</td>
+    <td class="pname" data-col="name">${escapeHtml(prod.name||'')}</td>
+    <td data-col="qty"><input class="qty-input" type="number" min="0" value="${qty}"></td>
+    <td class="buy" data-col="buy"><input class="price-input" type="number" min="0" value="${buy}"></td>
+    <td class="sell" data-col="sell"><input class="price-input" type="number" min="0" value="${sell}"></td>
+    <td class="sumBuy" data-col="sumBuy">${formatNumber(buy * qty)}</td>
+    <td class="sumSell" data-col="sumSell">${formatNumber(sell * qty)}</td>
+    <td data-col="actions"><button class="remove-btn">حذف</button></td>
+  `;
+
+  const qtyInput = tr.querySelector('.qty-input');
+  const buyInput = tr.querySelector('.buy .price-input');
+  const sellInput = tr.querySelector('.sell .price-input');
+
+  function onChangeRow(){
+    updateRowTotals(tr);
+    updateTotals();
+  }
+
+  qtyInput.addEventListener('input', onChangeRow);
+  buyInput.addEventListener('input', onChangeRow);
+  sellInput.addEventListener('input', onChangeRow);
+
+  tr.querySelector('.remove-btn').addEventListener('click', ()=>{
+    tr.remove();
+    renumber();
+    updateTotals();
+    updateColumnVisibility();
+  });
+
+  tbody.appendChild(tr);
+  invoiceCounter++;
+  renumber();
+  updateTotals();
+  updateColumnVisibility();
+  document.getElementById('itemsCount').textContent = tbody.querySelectorAll('tr').length;
+}
+
+function addManualRow() {
+    const tr = document.createElement('tr');
+
+    tr.innerHTML = `
+      <td class="idx" data-col="idx">${invoiceCounter}</td>
+      <td class="code" data-col="code"></td>
+      <td class="pname" data-col="name"><input style="width:100%;padding:6px;border-radius:6px;border:1px solid #e6eef8"></td>
+      <td data-col="qty"><input class="qty-input" type="number" min="0" value="1"></td>
+      <td data-col="buy"><input class="price-input" type="number" min="0"></td>
+      <td data-col="sell"><input class="price-input" type="number" min="0"></td>
+      <td class="sumBuy" data-col="sumBuy">0</td>
+      <td class="sumSell" data-col="sumSell">0</td>
+      <td data-col="actions"><button class="remove-btn">حذف</button></td>
+    `;
+
+    const qtyInput  = tr.querySelector('.qty-input');
+    const nameInput = tr.querySelector('.pname input');
+
+    // ← التصحيح هنا
+    const buyInput  = tr.querySelector('td[data-col="buy"] .price-input');
+    const sellInput = tr.querySelector('td[data-col="sell"] .price-input');
+
+    function onChange() {
+        const q = Number(qtyInput.value || 0);
+        const b = Number(buyInput.value || 0);
+        const s = Number(sellInput.value || 0);
+
+        tr.querySelector('.sumBuy').textContent  = formatNumber(b * q);
+        tr.querySelector('.sumSell').textContent = formatNumber(s * q);
+
+        updateTotals();
+    }
+
+    qtyInput.addEventListener('input', onChange);
+    buyInput.addEventListener('input', onChange);
+    sellInput.addEventListener('input', onChange);
+    nameInput.addEventListener('input', onChange);
+
+    tr.querySelector('.remove-btn').addEventListener('click', () => {
+        tr.remove();
+        renumber();
+        updateTotals();
+        updateColumnVisibility();
+    });
+
+    tbody.appendChild(tr);
+    invoiceCounter++;
+    renumber();
+    updateTotals();
+    updateColumnVisibility();
+    document.getElementById('itemsCount').textContent = tbody.querySelectorAll('tr').length;
+}
+
+function updateRowTotals(tr){
+  const q = Number(tr.querySelector('.qty-input').value || 0);
+  const buy = Number(tr.querySelector('.buy input').value || 0);
+  const sell = Number(tr.querySelector('.sell input').value || 0);
+  tr.querySelector('.sumBuy').textContent = formatNumber(buy * q);
+  tr.querySelector('.sumSell').textContent = formatNumber(sell * q);
+}
+
+function renumber(){
+  let i=1;
+  tbody.querySelectorAll('tr').forEach(r => { const el = r.querySelector('.idx'); if(el) el.textContent = i; i++; });
+  document.getElementById('itemsCount').textContent = tbody.querySelectorAll('tr').length;
+}
+
+function updateTotals(){
+  let totalQty=0, totalBuy=0, totalSell=0, grandBuy=0, grandSell=0;
+  tbody.querySelectorAll('tr').forEach(tr=>{
+    const q = Number(tr.querySelector('.qty-input').value || 0);
+    const buy = Number(tr.querySelector('.buy input').value || 0);
+    const sell = Number(tr.querySelector('.sell input').value || 0);
+    const sumBuy = Number(String(tr.querySelector('.sumBuy').textContent||'0').replace(/,/g, '') || 0);
+    const sumSell = Number(String(tr.querySelector('.sumSell').textContent||'0').replace(/,/g, '') || 0);
+
+    totalQty += q;
+    grandBuy += sumBuy;
+    grandSell += sumSell;
+    totalBuy += buy;
+    totalSell += sell;
+  });
+
+  document.getElementById('totalQty').textContent = formatNumber(totalQty);
+  document.getElementById('totalBuy').textContent = formatNumber(totalBuy); 
+  document.getElementById('totalSell').textContent = formatNumber(totalSell); 
+  document.getElementById('grandBuy').textContent = formatNumber(grandBuy);
+  document.getElementById('grandSell').textContent = formatNumber(grandSell);
+
+  document.getElementById('displayGrandBuy').textContent = formatNumber(grandBuy);
+  document.getElementById('displayGrandSell').textContent = formatNumber(grandSell);
+}
+
+/* Column visibility */
+const columnSelect = document.getElementById('columnSelect');
+const toggleColumnBtn = document.getElementById('toggleColumnBtn');
+let columnVisibility = {};
+
+function setupColumnToggle(){
+  columnSelect.innerHTML = '';
+  columnHeaders.forEach(col=>{
+    if(col.key !== 'idx' && col.key !== 'actions'){
+      const option = document.createElement('option');
+      option.value = col.key;
+      option.textContent = col.text;
+      columnSelect.appendChild(option);
+      columnVisibility[col.key] = true;
+    } else {
+      // ensure default visibility for idx/actions
+      columnVisibility[col.key] = true;
+    }
+  });
+}
+
+function updateColumnVisibility(){
+  const table = document.getElementById('invoiceTable');
+  columnHeaders.forEach(col=>{
+    const isVisible = columnVisibility[col.key] === undefined ? true : columnVisibility[col.key];
+
+    const th = table.querySelector(`th[data-col="${col.key}"]`);
+    if(th) th.classList.toggle('hidden', !isVisible);
+
+    table.querySelectorAll('tbody tr').forEach(row=>{
+      const td = row.querySelector(`td[data-col="${col.key}"]`);
+      if(td) td.classList.toggle('hidden', !isVisible);
+    });
+
+    // tfoot updates for totals columns
+    const tfootRow = document.querySelector('.totals-row');
+    if(tfootRow){
+      const buyTotalTd = tfootRow.querySelector('#totalBuy');
+      const sumBuyTotalTd = tfootRow.querySelector('#grandBuy');
+      if(buyTotalTd) buyTotalTd.classList.toggle('hidden', !columnVisibility['buy']);
+      if(sumBuyTotalTd) sumBuyTotalTd.classList.toggle('hidden', !columnVisibility['sumBuy']);
+
+      // recalc colspan for the left label (colspan should cover visible cols before qty)
+      let visibleBeforeQty = 0;
+      columnHeaders.slice(0,3).forEach(c=>{ if(columnVisibility[c.key] === undefined || columnVisibility[c.key]) visibleBeforeQty++; });
+      const firstTd = tfootRow.querySelector('.grand-total-label');
+      if(firstTd) firstTd.setAttribute('colspan', visibleBeforeQty);
+    }
+  });
+}
+
+/* Listeners for toggles */
+toggleColumnBtn.addEventListener('click', ()=>{
+  const selectedKey = columnSelect.value;
+  if(selectedKey){
+    columnVisibility[selectedKey] = !columnVisibility[selectedKey];
+    updateColumnVisibility();
+  }
+});
+
+document.getElementById('toggleBuyColumnsBtn').addEventListener('click', ()=>{
+  const isVisible = columnVisibility['buy'];
+  columnVisibility['buy'] = !isVisible;
+  columnVisibility['sumBuy'] = !isVisible;
+  updateColumnVisibility();
+});
+
+/* Stamp toggle */
+const companyStamp = document.getElementById('companyStamp');
+document.getElementById('toggleStampBtn').addEventListener('click', ()=> companyStamp.classList.toggle('hidden') );
+
+/* Title update */
+const mainTitle = document.getElementById('mainTitle');
+const invoiceTypeSelect = document.getElementById('invoiceTypeSelect');
+function updateInvoiceTitle(){
+  if(invoiceTypeSelect && mainTitle){
+    const txt = invoiceTypeSelect.options[invoiceTypeSelect.selectedIndex].text;
+    mainTitle.textContent = txt;
+    document.title = txt;
+  }
+}
+invoiceTypeSelect.addEventListener('change', updateInvoiceTitle);
+
+/* Dynamic file naming */
+function getFileName(ext){
+  const invoiceNum = document.getElementById('invoiceNumberInput').value.trim();
+  const clientName = document.getElementById('clientNameInput').value.trim();
+  const date = new Date().toISOString().slice(0,10);
+  const sanitize = (str) => str.replace(/\s+/g,'-').replace(/[^a-zA-Z0-9\u0600-\u06FF\-]/g,'');
+  let base = "فاتورة";
+  if(invoiceNum) base = `فاتورة-${sanitize(invoiceNum)}`;
+  else if(clientName) base = `عميل-${sanitize(clientName)}`;
+  else base = `فاتورة-${date}`;
+  return `${base}${ext}`;
+}
+
+/* Download image */
+document.getElementById('downloadImg').addEventListener('click', ()=>{
+  const area = document.querySelector('.wrap');
+  const elementsToHide = [ document.querySelector('.controls'), document.querySelector('.totals-bar') ];
+  const actionsColumn = document.querySelectorAll('[data-col="actions"]');
+
+  elementsToHide.forEach(el=>{ if(el) el.classList.add('hide-on-capture'); });
+  actionsColumn.forEach(el=> el.classList.add('hide-on-capture'));
+
+  html2canvas(area, {scale:2, useCORS:true}).then(canvas=>{
+    elementsToHide.forEach(el=>{ if(el) el.classList.remove('hide-on-capture'); });
+    actionsColumn.forEach(el=> el.classList.remove('hide-on-capture'));
+    const link = document.createElement('a');
+    link.download = getFileName('.png');
+    link.href = canvas.toDataURL();
+    link.click();
+  }).catch(err=>{
+    elementsToHide.forEach(el=>{ if(el) el.classList.remove('hide-on-capture'); });
+    actionsColumn.forEach(el=> el.classList.remove('hide-on-capture'));
+    alert('خطأ أثناء إنشاء الصورة: ' + (err && err.message || err));
+  });
+});
+
+/* Download PDF */
+document.getElementById('downloadPdf').addEventListener('click', async ()=>{
+  try{
+    const { jsPDF } = window.jspdf;
+    const area = document.querySelector('.wrap');
+    const elementsToHide = [ document.querySelector('.controls'), document.querySelector('.totals-bar') ];
+    const actionsColumn = document.querySelectorAll('[data-col="actions"]');
+
+    elementsToHide.forEach(el=>{ if(el) el.classList.add('hide-on-capture'); });
+    actionsColumn.forEach(el=> el.classList.add('hide-on-capture'));
+
+    const canvas = await html2canvas(area, {scale:2, useCORS:true});
+    elementsToHide.forEach(el=>{ if(el) el.classList.remove('hide-on-capture'); });
+    actionsColumn.forEach(el=> el.classList.remove('hide-on-capture'));
+
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF('l','mm','a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    pdf.save(getFileName('.pdf'));
+  }catch(err){
+    alert('خطأ أثناء إنشاء الـ PDF: ' + (err && err.message || err));
+  }
+});
+
+/* Buttons */
+document.getElementById('addManual').addEventListener('click', ()=> addManualRow());
+document.getElementById('clearInvoice').addEventListener('click', ()=>{
+  tbody.innerHTML = ''; invoiceCounter = 1; updateTotals(); renumber(); updateColumnVisibility();
+});
+
+/* Excel source change */
+const excelSelect = document.getElementById('excelSource');
+excelSelect.addEventListener('change', (e)=>{
+  const val = e.target.value;
+  loadExcel(val);
+});
+
+/* Close suggestions if click outside */
+document.addEventListener('click', (e)=>{
+  const sugg = document.querySelector('.suggestions');
+  if(!sugg) return;
+  if(!sugg.contains(e.target)) suggestList.style.display = 'none';
+});
+
+/* Initial setup on load */
+window.addEventListener('load', ()=>{
+  // Setup UI
+  setupColumnToggle();
+  updateInvoiceTitle();
+
+  // Set date to today (editable)
+  const dateInput = document.getElementById('invoiceDateInput');
+  const today = new Date();
+  dateInput.value = today.toLocaleDateString('ar-EG', { year:'numeric', month:'long', day:'numeric' });
+
+  // Load default excel (المحل)
+  const initial = document.getElementById('excelSource').value || DEFAULT_EXCEL;
+  loadExcel(initial);
+
+  // Initial column visibility
+  updateColumnVisibility();
+});
+</script>
+</body>
+</html>
