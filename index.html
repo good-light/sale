@@ -46,10 +46,46 @@
     .controls input[type="text"]{padding:10px 12px;border-radius:8px;border:2px solid #dbeafe;width:320px;font-size:15px;direction:ltr}
     .controls .small{padding:8px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff}
     /* suggestions */
-    .suggestions{position:relative;flex:1;min-width:220px}
-    #suggestList{position:absolute;right:0;left:0;top:44px;background:#fff;border-radius:8px;box-shadow:0 6px 20px rgba(16,24,40,0.08);z-index:1000;max-height:240px;overflow:auto;border:1px solid #e6eef8}
-    #suggestList div{padding:10px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9}
-    #suggestList div:hover{background:#e6f2ff}
+    .suggestions{position:relative;flex:1;min-width:240px}
+    #suggestList{
+      position:absolute;
+      right:0;
+      left:0;
+      top:44px;
+      background:#fff;
+      border-radius:8px;
+      box-shadow:0 6px 20px rgba(16,24,40,0.08);
+      z-index:1000;
+      max-height:320px;
+      overflow:auto;
+      border:1px solid #e6eef8;
+    }
+    #suggestList.hidden{display:none}
+    /* suggest table */
+    .suggest-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        font-size: 13px;
+    }
+    .suggest-table thead th {
+        background: var(--primary);
+        color: #fff;
+        padding: 6px;
+        text-align: center;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        font-weight: 700;
+    }
+    .suggest-table tbody td {
+        border-top: 1px solid #eee;
+        padding: 6px;
+        text-align: center;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .suggest-table tbody tr:hover { background: #eff8ff; }
     /* invoice table */
     .invoice-area{
         margin-top:18px;
@@ -75,10 +111,6 @@
         text-align:center;
         border-bottom:1px solid #f1f5f9;
         white-space: nowrap; 
-    }
-    tbody tr:hover { 
-        background: #f7fcff; 
-        transition: background 0.2s;
     }
     tfoot td{
         padding:12px;
@@ -267,7 +299,7 @@
     <div class="controls" aria-hidden="false">
       <div class="suggestions">
         <input id="searchInput" type="text" placeholder="اكتب اسم المنتج أو الكود..." autocomplete="off" />
-        <div id="suggestList" style="display:none"></div>
+        <div id="suggestList" class="hidden"></div>
       </div>
 
       <div style="display:flex;gap:8px;align-items:center; margin-top: 10px; flex-wrap: wrap;">
@@ -374,7 +406,7 @@ const columnHeaders = [
 /* Utility functions */
 function normKey(s){
   if(!s && s!==0) return "";
-  return String(s).toLowerCase().replace(/\s+/g,'').replace(/أ|إ|آ/g,'ا').replace(/[^ا-ي0-9a-z]/g,'');
+  return String(s).toLowerCase().replace(/\s+/g,'').replace(/أ|إ|آ/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^ا-ي0-9a-z\s]/g,'').trim();
 }
 function escapeHtml(s){
   if(s===null||s===undefined) return '';
@@ -382,6 +414,66 @@ function escapeHtml(s){
 }
 function formatNumber(n){
   return Number(n || 0).toLocaleString('en-US', {maximumFractionDigits:2});
+}
+
+/* --- Advanced Arabic normalization (remove tashkeel, convert digits, unify chars) --- */
+function normalizeArabic(str){
+  if(!str && str!==0) return "";
+  let s = String(str).toLowerCase();
+
+  // convert hindi digits to ascii
+  s = s.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)]);
+
+  // normalize common Arabic chars
+  s = s.replace(/[أإآ]/g, "ا");
+  s = s.replace(/ؤ/g, "و");
+  s = s.replace(/ئ/g, "ي");
+  s = s.replace(/ة/g, "ه");
+  s = s.replace(/ى/g, "ي");
+  s = s.replace(/گ/g, "ك");
+  s = s.replace(/پ/g, "ب");
+  s = s.replace(/چ/g, "ج");
+
+  // remove tashkeel
+  s = s.replace(/[\u064B-\u065F]/g, "");
+
+  // Latin letters: keep them (so english codes/names still match)
+  // remove symbols except whitespace and alphanum and Arabic letters
+  s = s.replace(/[^\u0600-\u06FF0-9a-zA-Z\s]/g, " ");
+
+  // collapse spaces and trim
+  s = s.replace(/\s+/g, " ").trim();
+
+  return s;
+}
+
+/* similarity: a basic token-aware similarity */
+function similarity(a, b){
+  a = normalizeArabic(String(a||""));
+  b = normalizeArabic(String(b||""));
+  if(a === b) return 1;
+  // token compare
+  const at = a.split(/\s+/);
+  const bt = b.split(/\s+/);
+  let score = 0;
+  at.forEach(ta=>{
+    bt.forEach(tb=>{
+      // exact or prefix
+      if(ta === tb) score += 1;
+      else if(ta.startsWith(tb) || tb.startsWith(ta)) score += 0.8;
+      else {
+        // character-level overlap
+        let same = 0;
+        const minl = Math.min(ta.length, tb.length);
+        for(let i=0;i<minl;i++) if(ta[i]===tb[i]) same++;
+        score += (same / Math.max(ta.length, tb.length)) * 0.6;
+      }
+    });
+  });
+
+  // normalize by possible maximum
+  const maxPairs = Math.max(at.length, bt.length);
+  return Math.min(1, score / Math.max(1, maxPairs));
 }
 
 /* Map headers to expected keys */
@@ -456,33 +548,86 @@ const suggestList = document.getElementById('suggestList');
 let debounceTimer = null;
 
 searchInput.addEventListener('input', (e)=>{
-  const q = e.target.value.trim();
+  const q = e.target.value;
   if(debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(()=>showSuggestions(q), 160);
 });
 
+/* buildSuggestionsIndex (kept for future enhancements) */
 function buildSuggestionsIndex(){
-  // no-op for now (products array is the index)
+  // currently products[] is the source; we might precompute normalized names later
 }
 
+/* showSuggestions: fuzzy + normalization + table with headers */
 function showSuggestions(q){
   suggestList.innerHTML = '';
-  if(!q){ suggestList.style.display='none'; return; }
-  const qn = String(q).toLowerCase();
-  const matches = products.filter(p=>{
-    const name = String(p.name||'').toLowerCase();
-    const code = String(p.code||'').toLowerCase();
-    return (name.includes(qn) || code.includes(qn));
-  }).slice(0,18);
+  if(!q || String(q).trim() === ''){ suggestList.classList.add('hidden'); return; }
+  const qNorm = normalizeArabic(q);
+  const qWords = qNorm.split(/\s+/);
 
-  if(matches.length === 0){ suggestList.style.display='none'; return; }
-  matches.forEach(m=>{
-    const div = document.createElement('div');
-    div.textContent = `${m.name||''} — ${m.code||''} | رصيد:${m.balance||0}`;
-    div.onclick = ()=>{ addProductToInvoice(m); suggestList.style.display='none'; searchInput.value=''; };
-    suggestList.appendChild(div);
+  // compute score for each product
+  const scored = products.map(p=>{
+    const name = normalizeArabic(p.name || '');
+    const code = normalizeArabic(p.code || '');
+    let score = 0;
+
+    // token-level matching: for each query word, find best match in product name tokens
+    const nameTokens = name.split(/\s+/).filter(Boolean);
+    qWords.forEach(qw=>{
+      // boost if code contains exact
+      if(code && code.includes(qw)) score += 1.5;
+      // compare with each token
+      let best = 0;
+      nameTokens.forEach(nt=>{
+        const sim = similarity(qw, nt);
+        if(sim > best) best = sim;
+      });
+      score += best;
+    });
+
+    // also check full-string similarity (helps when order differs)
+    const fullSim = similarity(qNorm, name);
+    score += fullSim * 1.2;
+
+    return { product: p, score };
   });
-  suggestList.style.display = 'block';
+
+  // threshold: keep those with meaningful score
+  const threshold = 0.55; // يمكنك تعديل الحساسية هنا
+  let matches = scored.filter(s => s.score >= threshold).sort((a,b)=>b.score - a.score).slice(0, 30).map(s=>s.product);
+
+  // If not many matches, relax threshold (to be more forgiving)
+  if(matches.length === 0 && products.length > 0){
+    matches = scored.sort((a,b)=>b.score - a.score).slice(0,8).map(s=>s.product);
+  }
+
+  if(matches.length === 0){ suggestList.classList.add('hidden'); return; }
+
+  // build table with header + rows
+  const tbl = document.createElement('table');
+  tbl.className = 'suggest-table';
+  const thead = document.createElement('thead');
+  thead.innerHTML = `<tr><th>الكود</th><th>اسم الصنف</th><th>السعر</th><th>الرصيد</th></tr>`;
+  tbl.appendChild(thead);
+  const tbodyTbl = document.createElement('tbody');
+
+  matches.forEach(m=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(m.code||'')}</td>
+                    <td style="text-align:right">${escapeHtml(m.name||'')}</td>
+                    <td>${formatNumber(m.sell||0)}</td>
+                    <td>${m.balance||0}</td>`;
+    tr.addEventListener('click', ()=>{
+      addProductToInvoice(m);
+      suggestList.classList.add('hidden');
+      searchInput.value = '';
+    });
+    tbodyTbl.appendChild(tr);
+  });
+
+  tbl.appendChild(tbodyTbl);
+  suggestList.appendChild(tbl);
+  suggestList.classList.remove('hidden');
 }
 
 /* Invoice operations */
@@ -508,8 +653,8 @@ function addProductToInvoice(prod){
   `;
 
   const qtyInput = tr.querySelector('.qty-input');
-  const buyInput = tr.querySelector('.buy .price-input');
-  const sellInput = tr.querySelector('.sell .price-input');
+  const buyInput = tr.querySelector('td[data-col="buy"] .price-input');
+  const sellInput = tr.querySelector('td[data-col="sell"] .price-input');
 
   function onChangeRow(){
     updateRowTotals(tr);
@@ -535,63 +680,58 @@ function addProductToInvoice(prod){
   document.getElementById('itemsCount').textContent = tbody.querySelectorAll('tr').length;
 }
 
-function addManualRow() {
-    const tr = document.createElement('tr');
+/* Fixed addManualRow (uses correct selectors) */
+function addManualRow(){
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="idx" data-col="idx">${invoiceCounter}</td>
+    <td class="code" data-col="code"></td>
+    <td class="pname" data-col="name"><input style="width:100%;padding:6px;border-radius:6px;border:1px solid #e6eef8"></td>
+    <td data-col="qty"><input class="qty-input" type="number" min="0" value="1"></td>
+    <td data-col="buy"><input class="price-input" type="number" min="0"></td>
+    <td data-col="sell"><input class="price-input" type="number" min="0"></td>
+    <td class="sumBuy" data-col="sumBuy">0</td>
+    <td class="sumSell" data-col="sumSell">0</td>
+    <td data-col="actions"><button class="remove-btn">حذف</button></td>
+  `;
 
-    tr.innerHTML = `
-      <td class="idx" data-col="idx">${invoiceCounter}</td>
-      <td class="code" data-col="code"></td>
-      <td class="pname" data-col="name"><input style="width:100%;padding:6px;border-radius:6px;border:1px solid #e6eef8"></td>
-      <td data-col="qty"><input class="qty-input" type="number" min="0" value="1"></td>
-      <td data-col="buy"><input class="price-input" type="number" min="0"></td>
-      <td data-col="sell"><input class="price-input" type="number" min="0"></td>
-      <td class="sumBuy" data-col="sumBuy">0</td>
-      <td class="sumSell" data-col="sumSell">0</td>
-      <td data-col="actions"><button class="remove-btn">حذف</button></td>
-    `;
+  const qtyInput  = tr.querySelector('.qty-input');
+  const nameInput = tr.querySelector('.pname input');
 
-    const qtyInput  = tr.querySelector('.qty-input');
-    const nameInput = tr.querySelector('.pname input');
+  // corrected selectors
+  const buyInput  = tr.querySelector('td[data-col="buy"] .price-input');
+  const sellInput = tr.querySelector('td[data-col="sell"] .price-input');
 
-    // ← التصحيح هنا
-    const buyInput  = tr.querySelector('td[data-col="buy"] .price-input');
-    const sellInput = tr.querySelector('td[data-col="sell"] .price-input');
-
-    function onChange() {
-        const q = Number(qtyInput.value || 0);
-        const b = Number(buyInput.value || 0);
-        const s = Number(sellInput.value || 0);
-
-        tr.querySelector('.sumBuy').textContent  = formatNumber(b * q);
-        tr.querySelector('.sumSell').textContent = formatNumber(s * q);
-
-        updateTotals();
-    }
-
-    qtyInput.addEventListener('input', onChange);
-    buyInput.addEventListener('input', onChange);
-    sellInput.addEventListener('input', onChange);
-    nameInput.addEventListener('input', onChange);
-
-    tr.querySelector('.remove-btn').addEventListener('click', () => {
-        tr.remove();
-        renumber();
-        updateTotals();
-        updateColumnVisibility();
-    });
-
-    tbody.appendChild(tr);
-    invoiceCounter++;
-    renumber();
+  function onChange(){
+    const q = Number(qtyInput.value || 0);
+    const b = Number(buyInput.value || 0);
+    const s = Number(sellInput.value || 0);
+    tr.querySelector('.sumBuy').textContent  = formatNumber(b * q);
+    tr.querySelector('.sumSell').textContent = formatNumber(s * q);
     updateTotals();
-    updateColumnVisibility();
-    document.getElementById('itemsCount').textContent = tbody.querySelectorAll('tr').length;
+  }
+
+  qtyInput.addEventListener('input', onChange);
+  buyInput.addEventListener('input', onChange);
+  sellInput.addEventListener('input', onChange);
+  nameInput.addEventListener('input', onChange);
+
+  tr.querySelector('.remove-btn').addEventListener('click', ()=>{
+    tr.remove(); renumber(); updateTotals(); updateColumnVisibility();
+  });
+
+  tbody.appendChild(tr);
+  invoiceCounter++;
+  renumber();
+  updateTotals();
+  updateColumnVisibility();
+  document.getElementById('itemsCount').textContent = tbody.querySelectorAll('tr').length;
 }
 
 function updateRowTotals(tr){
   const q = Number(tr.querySelector('.qty-input').value || 0);
-  const buy = Number(tr.querySelector('.buy input').value || 0);
-  const sell = Number(tr.querySelector('.sell input').value || 0);
+  const buy = Number(tr.querySelector('td[data-col="buy"] input').value || 0);
+  const sell = Number(tr.querySelector('td[data-col="sell"] input').value || 0);
   tr.querySelector('.sumBuy').textContent = formatNumber(buy * q);
   tr.querySelector('.sumSell').textContent = formatNumber(sell * q);
 }
@@ -606,8 +746,8 @@ function updateTotals(){
   let totalQty=0, totalBuy=0, totalSell=0, grandBuy=0, grandSell=0;
   tbody.querySelectorAll('tr').forEach(tr=>{
     const q = Number(tr.querySelector('.qty-input').value || 0);
-    const buy = Number(tr.querySelector('.buy input').value || 0);
-    const sell = Number(tr.querySelector('.sell input').value || 0);
+    const buy = Number(tr.querySelector('td[data-col="buy"] input').value || 0);
+    const sell = Number(tr.querySelector('td[data-col="sell"] input').value || 0);
     const sumBuy = Number(String(tr.querySelector('.sumBuy').textContent||'0').replace(/,/g, '') || 0);
     const sumSell = Number(String(tr.querySelector('.sumSell').textContent||'0').replace(/,/g, '') || 0);
 
@@ -643,7 +783,6 @@ function setupColumnToggle(){
       columnSelect.appendChild(option);
       columnVisibility[col.key] = true;
     } else {
-      // ensure default visibility for idx/actions
       columnVisibility[col.key] = true;
     }
   });
@@ -716,7 +855,7 @@ function getFileName(ext){
   const invoiceNum = document.getElementById('invoiceNumberInput').value.trim();
   const clientName = document.getElementById('clientNameInput').value.trim();
   const date = new Date().toISOString().slice(0,10);
-  const sanitize = (str) => str.replace(/\s+/g,'-').replace(/[^a-zA-Z0-9\u0600-\u06FF\-]/g,'');
+  const sanitize = (str) => String(str||'').replace(/\s+/g,'-').replace(/[^a-zA-Z0-9\u0600-\u06FF\-]/g,'');
   let base = "فاتورة";
   if(invoiceNum) base = `فاتورة-${sanitize(invoiceNum)}`;
   else if(clientName) base = `عميل-${sanitize(clientName)}`;
@@ -790,7 +929,7 @@ excelSelect.addEventListener('change', (e)=>{
 document.addEventListener('click', (e)=>{
   const sugg = document.querySelector('.suggestions');
   if(!sugg) return;
-  if(!sugg.contains(e.target)) suggestList.style.display = 'none';
+  if(!sugg.contains(e.target)) suggestList.classList.add('hidden');
 });
 
 /* Initial setup on load */
